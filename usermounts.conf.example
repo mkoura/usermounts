@@ -1,0 +1,29 @@
+#!/bin/sh
+
+# to be placed in ~/.config/usermounts/usermounts.conf
+
+# first mountpoint
+mntpoint1=$HOME/crypt
+# command that will do the mounting
+mntcmd1="luksmount.sh /home/martink/.loop/config $mntpoint1 nodev,nosuid,noatime,compress=lzo,ssd"
+# authentication - can be 'none' if no auth is necessary,
+# 'unique' for unique password just for this mountpoint,
+# or empty for "master" password
+#auth1=
+
+# second mountpoint
+mntpoint2=$HOME/CmoudDec
+mntcmd2="encfs -S $HOME/Cmoud/enc $mntpoint2"
+# can be mounted in the background
+mntbg2=true
+
+# third mountpoint
+mntpoint3=$HOME/DocDec
+# device / directory to mount (optional)
+# if the device is not present, mounting will be skipped
+# (e.g. when the device is on external device that is not present at the moment)
+mntdev3=/mnt/img/martink/data/doc-enc
+mntcmd3="encfs -S $mntdev3 $mntpoint3"
+mntbg3=true
+
+# fourth, fifth, ... mountpoints

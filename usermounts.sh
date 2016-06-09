@@ -1,11 +1,17 @@
 #!/bin/sh
 
-# Requirements: zenity (optional)
+# Requirements: zenity (optional), notify-send (optional)
 #
+
+confirm=1
+case "$1" in
+  -n | --no-confirm ) confirm=0; shift ;;
+  -h |       --help ) echo "Usage: ${0##*/} [-n|--no-confirm]" >&2; exit 0 ;;
+esac
 
 # source configuration
 cfg="$HOME/.config/usermounts/usermounts.conf"
-[ -e "$cfg" ] && . $cfg || return 2
+[ -e "$cfg" ] && . "$cfg" || exit 2
 
 
 ## global variables
@@ -19,8 +25,13 @@ background_mounts=""
 mntpoints=""
 retval=1
 
-# check if we can run zenity
-{ xset -q && type zenity; } >/dev/null 2>&1 && havex=1 || havex=0
+# check if we can run zenity and notify-send
+havex=0
+havenotify=0
+if xset -q ; then
+  hash zenity && havex=1
+  hash notify-send && havenotify=1
+fi >/dev/null 2>&1
 
 ##
 
@@ -39,7 +50,7 @@ get_mntpoints() {
 # check if mountpoint can be mounted in background
 in_background() {
   rv=1
-  eval curbg=\$mntbg$1
+  eval curbg=\$mntbg"$1"
   case "$curbg" in
     true|1|yes|y)
       rv=0
@@ -51,7 +62,7 @@ in_background() {
 # get indexes of configured mountpoints
 get_mntnums() {
   for rec in $mntpoints; do
-    cnum="$(echo "$rec" | { IFS='=' read mname mvalue; printf "${mname#mntpoint} "; })"
+    cnum="$(echo "$rec" | { IFS='=' read mname _; printf "${mname#mntpoint} "; })"
     in_background "$cnum" \
       && background_mounts="$background_mounts $cnum" \
       || foreground_mounts="$foreground_mounts $cnum"
@@ -63,10 +74,10 @@ ask_password() {
   unset tmp_password
   if [ "$havex" -eq 1 ]; then
     tmp_password="$(zenity --password --title="$1")"
-    return $?
+    return "$?"
   else
     stty -echo
-    echo -n "${1}: "
+    printf "${1}: "
     read tmp_password
     stty echo
     echo
@@ -99,30 +110,30 @@ new_password() {
 
 # record mount status
 set_status() {
-  [ "$1" -eq 0 ] && mounted_count="$(($mounted_count + 1))"
-  return $1
+  [ "$1" -eq 0 ] && mounted_count="$((mounted_count + 1))"
+  return "$1"
 }
 
 # do the mounting
 mountit() {
   # repeat for every mountpoint
-  for num in $@; do
+  for num in "$@"; do
     # settings for current mountpoint
-    eval curmntpoint=\$mntpoint$num
-    eval curmntdev=\$mntdev$num # optional
-    eval curmntcmd=\$mntcmd$num
-    eval curauth=\$auth$num # optional
+    eval curmntpoint=\$mntpoint"$num"
+    eval curmntdev=\$mntdev"$num" # optional
+    eval curmntcmd=\$mntcmd"$num"
+    eval curauth=\$auth"$num" # optional
     # check if the mountpoint exists
     [ ! -e "$curmntpoint" ] && continue
     # check if the device (directory) to mount is present
     [ -n "$curmntdev" ] && [ ! -e "$curmntdev" ] && continue
     # check if the command is set
     [ -z "$curmntcmd" ] && continue
-    mountpoints_count="$(($mountpoints_count + 1))"
+    mountpoints_count="$((mountpoints_count + 1))"
 
     # retry in case of mount failure (incorrect password?)
-    for try in 1 2 3; do
-      if mounted $curmntpoint ; then
+    for _ in 1 2 3; do
+      if mounted "$curmntpoint"; then
         # already mounted
         set_status 0
         break
@@ -171,8 +182,20 @@ final_checks() {
     Make sure you have permissions to mount the device and/or that you configured sudo(8) correctly."
 
     [ "$havex" -eq 1 ] && zenity --warning --text="$err"
-    echo "$err" >&2
+    echo "${0##*/}: $err" >&2
   else
+    if [ "$confirm" -eq 1 ]; then
+      msg="Everything mounted"
+      if [ -t 1 ]; then
+        echo "$msg"
+      elif [ "$havenotify" -eq 1 ]; then
+        notify-send "$msg" &
+      elif [ "$havex" -eq 1 ]; then
+        zenity --info --text="$msg" &
+      else
+        echo "${0##*/}: $msg"
+      fi
+    fi
     # success, we can return 0
     retval=0
   fi

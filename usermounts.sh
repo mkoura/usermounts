@@ -4,15 +4,19 @@
 #
 
 confirm=1
-case "$1" in
-  -n | --no-confirm ) confirm=0; shift ;;
-  -h |       --help ) echo "Usage: ${0##*/} [-n|--no-confirm]" >&2; exit 0 ;;
-esac
+force_no_x=0
+me="${0##*/}"
 
-# source configuration
-cfg="$HOME/.config/usermounts/usermounts.conf"
-[ -e "$cfg" ] && . "$cfg" || exit 2
-
+while [ "${1+defined}" ]; do
+  case "$1" in
+    -n | --no-confirm ) confirm=0 ;;
+    -x |       --no-x ) force_no_x=1 ;;
+    -c |     --config ) shift ; cfg="$1" ;;
+    -h |       --help )
+      echo "Usage: $me [-n|--no-confirm] [-x|--no-x] [-c|--config <conf_file>]" >&2; exit 0 ;;
+  esac
+  shift
+done
 
 ## global variables
 
@@ -28,13 +32,27 @@ retval=1
 # check if we can run zenity and notify-send
 havex=0
 havenotify=0
-if xset -q ; then
+if [ "$force_no_x" -ne 1 ] && xset -q ; then
   hash zenity && havex=1
   hash notify-send && havenotify=1
 fi >/dev/null 2>&1
 
 ##
 
+print_err() {
+  [ -z "$1" ] && return 1
+  [ ! -t 0 ] && [ "$havex" -eq 1 ] && zenity --warning --text="$1"
+  echo "${me}: $1" >&2
+}
+
+# source configuration
+cfg="${cfg:-$HOME/.config/usermounts/usermounts.conf}"
+if [ -e "$cfg" ]; then
+  . "$cfg"
+else
+  print_err "Config file not found: $cfg"
+  exit 2
+fi
 
 # get all mountpoints
 get_mntpoints() {
@@ -69,10 +87,10 @@ get_mntnums() {
   done
 }
 
-# prompt for password in graphics if possible, otherwise in text
+# prompt for password in graphics if not running in terminal, otherwise in text
 ask_password() {
   unset tmp_password
-  if [ "$havex" -eq 1 ]; then
+  if [ ! -t 0 ] && [ "$havex" -eq 1 ]; then
     tmp_password="$(zenity --password --title="$1")"
     return "$?"
   else
@@ -177,30 +195,29 @@ mountit() {
 # check if everything was mounted and exit
 final_checks() {
   if [ "$mounted_count" -ne "$mountpoints_count" -a "$main_aborted" = "false" ]; then
-    err="Some mounts failed.
+    print_err "Some mounts failed.
     Make sure you have the same password for all encrypted mounts where 'main' password is used.
     Make sure you have permissions to mount the device and/or that you configured sudo(8) correctly."
-
-    [ "$havex" -eq 1 ] && zenity --warning --text="$err"
-    echo "${0##*/}: $err" >&2
+    retval=8
+  elif [ "$main_aborted" = "true" ]; then
+    retval=1
   else
     if [ "$confirm" -eq 1 ]; then
-      msg="Everything mounted"
-      if [ -t 1 ]; then
+      msg="Everything is mounted"
+      if [ -t 0 ]; then
         echo "$msg"
       elif [ "$havenotify" -eq 1 ]; then
         notify-send "$msg" &
       elif [ "$havex" -eq 1 ]; then
         zenity --info --text="$msg" &
       else
-        echo "${0##*/}: $msg"
+        echo "${me}: $msg"
       fi
     fi
-    # success, we can return 0
     retval=0
   fi
 
-  exit $retval
+  return $retval
 }
 
 
@@ -221,10 +238,11 @@ mountit $foreground_mounts
 if [ -n "$background_mounts" ]; then
   # can we do it in background? We need zenity to prompt for password.
   if [ "$havex" -eq 1 ]; then
-    # from now on, all remaining tasks needs to be done in background
+    # CAUTION: from now on, all remaining tasks needs to be done in background
     { mountit $background_mounts; final_checks; } &
+    exit "$retval"
   else
     mountit $background_mounts
-    final_checks
   fi
 fi
+final_checks

@@ -207,7 +207,7 @@ final_checks() {
       if [ -t 0 ]; then
         echo "$msg"
       elif [ "$havenotify" -eq 1 ]; then
-        notify-send "$msg" &
+        notify-send -i drive-harddisk "$msg" &
       elif [ "$havex" -eq 1 ]; then
         zenity --info --text="$msg" &
       else

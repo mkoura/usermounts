@@ -1,4 +1,4 @@
-usermounts.sh
+Moved to https://gitlab.com/mkourim/usermounts
 =============
 
 Can be used to mount encrypted devices or directories by user.
